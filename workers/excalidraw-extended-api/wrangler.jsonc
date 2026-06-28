@@ -13,7 +13,7 @@
   "kv_namespaces": [
     {
       "binding": "PERSISTENCE_KV",
-      "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID"
+      "id": "9e4e6bc802df4788ac5dd8e8bfb592e7"
     }
   ],
   "vars": {
