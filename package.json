@@ -5,7 +5,8 @@
   "workspaces": [
     "excalidraw-app",
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "workers/*"
   ],
   "devDependencies": {
     "@babel/preset-env": "7.26.9",
@@ -67,6 +68,11 @@
     "cf:dev": "npx --yes wrangler dev",
     "cf:deploy": "yarn cf:build && npx --yes wrangler deploy",
     "cf:deploy:dry-run": "yarn cf:build && npx --yes wrangler deploy --dry-run",
+    "worker:extended-api:dev": "yarn --cwd ./workers/excalidraw-extended-api dev",
+    "worker:extended-api:test": "yarn --cwd ./workers/excalidraw-extended-api test",
+    "worker:extended-api:typecheck": "yarn --cwd ./workers/excalidraw-extended-api typecheck",
+    "worker:extended-api:deploy": "yarn --cwd ./workers/excalidraw-extended-api deploy",
+    "worker:extended-api:deploy:dry-run": "yarn --cwd ./workers/excalidraw-extended-api deploy:dry-run",
     "start": "yarn --cwd ./excalidraw-app start",
     "start:production": "yarn --cwd ./excalidraw-app start:production",
     "start:example": "yarn build:packages && yarn --cwd ./examples/with-script-in-browser start",

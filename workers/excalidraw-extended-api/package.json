@@ -1,0 +1,21 @@
+{
+  "name": "excalidraw-extended-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "hono": "4.12.27"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260628.1",
+    "vitest": "3.0.6",
+    "wrangler": "4.105.0"
+  }
+}

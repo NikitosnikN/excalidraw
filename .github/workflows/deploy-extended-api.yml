@@ -1,0 +1,62 @@
+name: Deploy Excalidraw Extended API
+
+on:
+  push:
+    branches:
+      - master-fork
+    paths:
+      - ".github/workflows/deploy-extended-api.yml"
+      - "workers/excalidraw-extended-api/**"
+      - "package.json"
+      - "yarn.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy API Worker
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master-fork'
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      EXCALIDRAW_EXTENDED_API_KV_NAMESPACE_ID: ${{ secrets.EXCALIDRAW_EXTENDED_API_KV_NAMESPACE_ID }}
+      TOKEN_HASH_PEPPER: ${{ secrets.TOKEN_HASH_PEPPER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Typecheck API Worker
+        run: yarn worker:extended-api:typecheck
+
+      - name: Test API Worker
+        run: yarn worker:extended-api:test
+
+      - name: Configure KV namespace
+        run: |
+          test -n "$EXCALIDRAW_EXTENDED_API_KV_NAMESPACE_ID"
+          sed -i.bak "s/REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID/$EXCALIDRAW_EXTENDED_API_KV_NAMESPACE_ID/g" workers/excalidraw-extended-api/wrangler.jsonc
+
+      - name: Upload token hash pepper
+        working-directory: workers/excalidraw-extended-api
+        run: |
+          test -n "$TOKEN_HASH_PEPPER"
+          secret_file="$(mktemp)"
+          printf "%s" "$TOKEN_HASH_PEPPER" > "$secret_file"
+          npx wrangler secret put TOKEN_HASH_PEPPER < "$secret_file"
+          rm -f "$secret_file"
+
+      - name: Deploy API Worker
+        working-directory: workers/excalidraw-extended-api
+        run: npx wrangler deploy

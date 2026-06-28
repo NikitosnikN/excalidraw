@@ -3,6 +3,7 @@
 .env.local
 .env.production.local
 .env.test.local
+.dev.vars
 .envrc
 .eslintcache
 .history

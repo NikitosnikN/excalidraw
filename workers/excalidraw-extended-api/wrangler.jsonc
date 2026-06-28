@@ -1,0 +1,25 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "excalidraw-extended-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-28",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "api-draw.nikitayugov.com",
+      "custom_domain": true
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "PERSISTENCE_KV",
+      "id": "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID"
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://draw.nikitayugov.com"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

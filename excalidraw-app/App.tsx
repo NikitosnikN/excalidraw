@@ -141,6 +141,9 @@ import DebugCanvas, {
 } from "./components/DebugCanvas";
 import { AIComponents } from "./components/AI";
 import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
+import { PersistentRoomControls } from "./persistence/PersistentRoomControls";
+import { bootstrapPersistentRoom } from "./persistence/scene";
+import { usePersistentRoom } from "./persistence/usePersistentRoom";
 
 import "./index.scss";
 
@@ -148,6 +151,7 @@ import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanne
 import { AppSidebar } from "./components/AppSidebar";
 
 import type { CollabAPI } from "./collab/Collab";
+import type { PersistentRoomSession } from "./persistence/types";
 
 polyfill();
 
@@ -216,7 +220,10 @@ const initializeScene = async (opts: {
   collabAPI: CollabAPI | null;
   excalidrawAPI: ExcalidrawImperativeAPI;
 }): Promise<
-  { scene: ExcalidrawInitialDataState | null } & (
+  {
+    scene: ExcalidrawInitialDataState | null;
+    persistentRoom: PersistentRoomSession | null;
+  } & (
     | { isExternalScene: true; id: string; key: string }
     | { isExternalScene: false; id?: null; key?: null }
   )
@@ -229,6 +236,14 @@ const initializeScene = async (opts: {
   const externalUrlMatch = window.location.hash.match(/^#url=(.*)$/);
 
   const localDataState = importFromLocalStorage();
+  const persistentRoomBootstrap = await bootstrapPersistentRoom();
+  if (persistentRoomBootstrap) {
+    return {
+      scene: persistentRoomBootstrap.scene,
+      isExternalScene: false,
+      persistentRoom: persistentRoomBootstrap.session,
+    };
+  }
 
   let scene: Omit<
     RestoredDataState,
@@ -310,7 +325,7 @@ const initializeScene = async (opts: {
         !scene.elements.length ||
         (await openConfirmModal(shareableLinkConfirmDialog))
       ) {
-        return { scene: data, isExternalScene };
+        return { scene: data, isExternalScene, persistentRoom: null };
       }
     } catch (error: any) {
       return {
@@ -320,6 +335,7 @@ const initializeScene = async (opts: {
           },
         },
         isExternalScene,
+        persistentRoom: null,
       };
     }
   }
@@ -356,6 +372,7 @@ const initializeScene = async (opts: {
       isExternalScene: true,
       id: roomLinkData.roomId,
       key: roomLinkData.roomKey,
+      persistentRoom: null,
     };
   } else if (scene) {
     return isExternalScene && jsonBackendMatch
@@ -364,19 +381,28 @@ const initializeScene = async (opts: {
           isExternalScene,
           id: jsonBackendMatch[1],
           key: jsonBackendMatch[2],
+          persistentRoom: null,
         }
-      : { scene, isExternalScene: false };
+      : { scene, isExternalScene: false, persistentRoom: null };
   }
-  return { scene: null, isExternalScene: false };
+  return { scene: null, isExternalScene: false, persistentRoom: null };
 };
 
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
+  const [persistentRoomSession, setPersistentRoomSession] =
+    useState<PersistentRoomSession | null>(null);
   const isCollabDisabled = isRunningInIframe();
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
+  const persistentRoom = usePersistentRoom({
+    excalidrawAPI,
+    session: persistentRoomSession,
+    setSession: setPersistentRoomSession,
+    setErrorMessage,
+  });
 
   const [langCode, setLangCode] = useAppLangCode();
 
@@ -524,10 +550,19 @@ const ExcalidrawWrapper = () => {
       return;
     }
 
-    initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
-      loadImages(data, /* isInitialLoad */ true);
-      initialStatePromiseRef.current.promise.resolve(data.scene);
-    });
+    initializeScene({ collabAPI, excalidrawAPI })
+      .then(async (data) => {
+        loadImages(data, /* isInitialLoad */ true);
+        setPersistentRoomSession(data.persistentRoom);
+        initialStatePromiseRef.current.promise.resolve(data.scene);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setErrorMessage(message);
+        initialStatePromiseRef.current.promise.resolve({
+          appState: { errorMessage: message },
+        });
+      });
 
     const onHashChange = async (event: HashChangeEvent) => {
       event.preventDefault();
@@ -541,18 +576,29 @@ const ExcalidrawWrapper = () => {
         }
         excalidrawAPI.updateScene({ appState: { isLoading: true } });
 
-        initializeScene({ collabAPI, excalidrawAPI }).then((data) => {
-          loadImages(data);
-          if (data.scene) {
+        initializeScene({ collabAPI, excalidrawAPI })
+          .then((data) => {
+            loadImages(data);
+            setPersistentRoomSession(data.persistentRoom);
+            if (data.scene) {
+              excalidrawAPI.updateScene({
+                elements: restoreElements(data.scene.elements, null, {
+                  repairBindings: true,
+                }),
+                appState: restoreAppState(data.scene.appState, null),
+                captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              });
+            }
+          })
+          .catch((error) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            setErrorMessage(message);
             excalidrawAPI.updateScene({
-              elements: restoreElements(data.scene.elements, null, {
-                repairBindings: true,
-              }),
-              appState: restoreAppState(data.scene.appState, null),
-              captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              appState: { isLoading: false, errorMessage: message },
+              captureUpdate: CaptureUpdateAction.NEVER,
             });
-          }
-        });
+          });
       }
     };
 
@@ -682,6 +728,8 @@ const ExcalidrawWrapper = () => {
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }
+
+    persistentRoom.scheduleAutosave(elements, appState, files);
 
     // this check is redundant, but since this is a hot path, it's best
     // not to evaludate the nested expression every time
@@ -953,26 +1001,39 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || isCollabDisabled) {
+          if (isMobile) {
+            return null;
+          }
+
+          const shouldShowCollabTrigger = !!collabAPI && !isCollabDisabled;
+          if (!persistentRoom.isEnabled && !shouldShowCollabTrigger) {
             return null;
           }
 
           return (
             <div className="excalidraw-ui-top-right">
-              {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
+              <PersistentRoomControls controller={persistentRoom} />
+
+              {shouldShowCollabTrigger &&
+                excalidrawAPI?.getEditorInterface().formFactor ===
+                  "desktop" && (
+                  <ExcalidrawPlusPromoBanner
+                    isSignedIn={isExcalidrawPlusSignedUser}
+                  />
+                )}
+
+              {shouldShowCollabTrigger && collabError.message && (
+                <CollabError collabError={collabError} />
+              )}
+              {shouldShowCollabTrigger && (
+                <LiveCollaborationTrigger
+                  isCollaborating={isCollaborating}
+                  onSelect={() =>
+                    setShareDialogState({ isOpen: true, type: "share" })
+                  }
+                  editorInterface={editorInterface}
                 />
               )}
-
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
-              />
             </div>
           );
         }}
