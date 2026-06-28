@@ -13,7 +13,8 @@
   "kv_namespaces": [
     {
       "binding": "PERSISTENCE_KV",
-      "id": "9e4e6bc802df4788ac5dd8e8bfb592e7"
+      "id": "9e4e6bc802df4788ac5dd8e8bfb592e7",
+      "preview_id": "6ee867ea0c8244e9af34c0d88c55d12a"
     }
   ],
   "vars": {
