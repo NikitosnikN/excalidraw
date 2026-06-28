@@ -61,6 +61,7 @@ export const usePersistentRoom = ({
   const [roomName, setRoomName] = useState(session?.config.name || "");
   const latestSceneRef = useRef<LatestScene | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
+  const sceneHashCheckRef = useRef(0);
   const sessionRef = useRef(session);
 
   useEffect(() => {
@@ -130,6 +131,7 @@ export const usePersistentRoom = ({
         updateSession(
           sessionFromSaveResponse(response, activeSession.storageAccessToken),
         );
+        sceneHashCheckRef.current += 1;
         setStatus("saved");
       } catch (error) {
         if (
@@ -177,20 +179,47 @@ export const usePersistentRoom = ({
       }
 
       latestSceneRef.current = { elements, appState, files };
+      const hashCheckId = sceneHashCheckRef.current + 1;
+      sceneHashCheckRef.current = hashCheckId;
 
-      if (autosaveTimerRef.current) {
-        window.clearTimeout(autosaveTimerRef.current);
-      }
+      void (async () => {
+        const snapshotPayload = toSnapshotPayload(elements, appState, files);
+        const contentHash = await hashSnapshot(snapshotPayload);
 
-      setStatus((currentStatus) =>
-        currentStatus === "saving" ? currentStatus : "pending",
-      );
+        if (hashCheckId !== sceneHashCheckRef.current) {
+          return;
+        }
 
-      autosaveTimerRef.current = window.setTimeout(() => {
-        void saveLatestScene({ force: false, source: "autosave" });
-      }, AUTOSAVE_DELAY_MS);
+        const activeSession = sessionRef.current;
+        if (!activeSession) {
+          return;
+        }
+
+        if (autosaveTimerRef.current) {
+          window.clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = null;
+        }
+
+        if (contentHash === activeSession.contentHash) {
+          setStatus((currentStatus) =>
+            currentStatus === "saving" ? currentStatus : "saved",
+          );
+          return;
+        }
+
+        setStatus((currentStatus) =>
+          currentStatus === "saving" ? currentStatus : "pending",
+        );
+
+        autosaveTimerRef.current = window.setTimeout(() => {
+          void saveLatestScene({ force: false, source: "autosave" });
+        }, AUTOSAVE_DELAY_MS);
+      })().catch((error) => {
+        setStatus("error");
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+      });
     },
-    [saveLatestScene],
+    [saveLatestScene, setErrorMessage],
   );
 
   const manualSave = useCallback(async () => {

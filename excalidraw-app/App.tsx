@@ -147,7 +147,6 @@ import { usePersistentRoom } from "./persistence/usePersistentRoom";
 
 import "./index.scss";
 
-import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
 
 import type { CollabAPI } from "./collab/Collab";
@@ -1013,14 +1012,6 @@ const ExcalidrawWrapper = () => {
           return (
             <div className="excalidraw-ui-top-right">
               <PersistentRoomControls controller={persistentRoom} />
-
-              {shouldShowCollabTrigger &&
-                excalidrawAPI?.getEditorInterface().formFactor ===
-                  "desktop" && (
-                  <ExcalidrawPlusPromoBanner
-                    isSignedIn={isExcalidrawPlusSignedUser}
-                  />
-                )}
 
               {shouldShowCollabTrigger && collabError.message && (
                 <CollabError collabError={collabError} />
