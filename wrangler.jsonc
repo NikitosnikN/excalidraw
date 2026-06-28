@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "excalidraw",
+  "compatibility_date": "2026-06-28",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "draw.nikitayugov.com",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./excalidraw-app/build",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
