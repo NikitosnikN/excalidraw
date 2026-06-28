@@ -103,6 +103,7 @@ Use command-style REST:
 POST /api/rooms
 GET  /api/rooms/:roomId/snapshot
 PUT  /api/rooms/:roomId/snapshot
+PUT  /api/rooms/:roomId/config
 ```
 
 The SPA reads the API origin from:
@@ -117,6 +118,10 @@ Example create response:
 {
   "roomId": "room_abc123",
   "storageAccessToken": "sat_secret",
+  "config": {
+    "name": null,
+    "updatedAt": "2026-06-28T00:00:00.000Z"
+  },
   "snapshot": {
     "revision": 1,
     "contentHash": "sha256:...",
@@ -134,6 +139,72 @@ Example create response:
   }
 }
 ```
+
+### Room Configuration
+
+Each persistent room has a small mutable configuration record owned by the API.
+The MVP config contains only an optional human-readable room name:
+
+```ts
+type RoomConfig = {
+  name: string | null;
+  updatedAt: string;
+};
+```
+
+Room names are display metadata only:
+
+- not part of the Excalidraw scene snapshot;
+- not included in `contentHash`;
+- not used for authorization;
+- not required to be unique;
+- not used in the URL path.
+
+The default room name is `null`. The client may render a fallback such as
+`Untitled room` or a shortened `roomId`, but fallback labels are presentation
+state and should not be persisted unless the user explicitly renames the room.
+
+Room names must be sanitized and bounded by the API:
+
+```text
+trim whitespace
+empty string => null
+maximum length: 120 Unicode code points
+store as plain text only
+render as textContent, never as HTML
+```
+
+Updating the room name uses the same read/write `storageAccessToken` as snapshot
+updates:
+
+```http
+PUT /api/rooms/:roomId/config
+Authorization: Bearer sat_...
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "Architecture sketch"
+}
+```
+
+Response:
+
+```json
+{
+  "roomId": "room_abc123",
+  "config": {
+    "name": "Architecture sketch",
+    "updatedAt": "2026-06-28T00:00:00.000Z"
+  }
+}
+```
+
+Config updates do not increment the snapshot `revision`. For the single-device
+MVP, room config writes may use last-write-wins semantics. If multi-device
+editing of room metadata becomes important, add a separate `configRevision`
+field rather than overloading the scene snapshot revision.
 
 Example save request:
 
@@ -177,6 +248,7 @@ interface RoomRepository {
   createRoom(input: CreateRoomInput): Promise<RoomRecord>;
   getRoom(roomId: string): Promise<RoomRecord | null>;
   verifyAccessToken(roomId: string, token: string): Promise<boolean>;
+  updateRoomConfig(input: UpdateRoomConfigInput): Promise<RoomRecord>;
   updateRoomRevision(input: UpdateRoomRevisionInput): Promise<RoomRecord>;
 }
 ```
@@ -335,6 +407,10 @@ type PersistedRoomAggregateV1 = {
   recordVersion: 1;
   roomId: string;
   tokenHash: string;
+  config: {
+    name: string | null;
+    updatedAt: string;
+  };
   revision: number;
   contentHash: string;
   createdAt: string;
@@ -464,7 +540,7 @@ type PersistentRoomRegistry = {
     {
       storageAccessToken: string;
       lastOpenedAt: string;
-      title?: string;
+      roomName?: string;
       lastKnownRevision?: number;
       lastKnownContentHash?: string;
     }
@@ -559,6 +635,7 @@ Initial limits:
 | `POST /api/rooms` | `create:{ip}` | `5/min` | Limit anonymous room creation abuse |
 | `GET /api/rooms/:roomId/snapshot` | `read:{roomId}:{tokenHash}` | `60/min` | Limit polling or reload loops |
 | `PUT /api/rooms/:roomId/snapshot` | `write:{roomId}:{tokenHash}` | `6/min` | Protect KV from frequent writes |
+| `PUT /api/rooms/:roomId/config` | `write:{roomId}:{tokenHash}` | `6/min` | Share the room write budget |
 
 Example Wrangler bindings:
 
@@ -752,6 +829,7 @@ Frontend:
 - add bootstrap redirect from `/` to a newly created room;
 - add `VITE_APP_PERSISTENCE_API_URL`;
 - add a room registry wrapper around `localStorage["persistentRooms"]`;
+- add room name display and rename UI backed by room config;
 - add snapshot load/save integration with Excalidraw scene state;
 - add a manual save button;
 - add 60-second debounced autosave;
@@ -775,6 +853,7 @@ API Worker:
 - implement `POST /api/rooms`;
 - implement `GET /api/rooms/:roomId/snapshot`;
 - implement `PUT /api/rooms/:roomId/snapshot`;
+- implement `PUT /api/rooms/:roomId/config`;
 - return `401` or `403` for invalid access tokens;
 - return `404` for missing rooms;
 - return `429 Too Many Requests` for rate-limited requests;
@@ -794,6 +873,10 @@ Test coverage:
 - `PUT /api/rooms/:roomId/snapshot` treats same `contentHash` as a no-op;
 - `PUT /api/rooms/:roomId/snapshot` returns `409` for stale `baseRevision`;
 - `PUT /api/rooms/:roomId/snapshot` allows explicit `force: true`;
+- `PUT /api/rooms/:roomId/config` updates the room name without changing
+  snapshot revision;
+- `PUT /api/rooms/:roomId/config` normalizes an empty name to `null`;
+- room names are escaped/rendered as text, not HTML;
 - payloads above the MVP limit return `413`;
 - rate-limited requests return `429`;
 - CORS preflight succeeds for `https://draw.nikitayugov.com`;
