@@ -270,6 +270,14 @@ Example secret file: workers/excalidraw-extended-api/.dev.vars.example
 `TOKEN_HASH_PEPPER` must be configured through Wrangler secrets for deployed
 environments and must not be committed.
 
+GitHub Actions deploys must read Cloudflare credentials from repository secrets
+and expose them as Wrangler environment variables:
+
+```text
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_API_TOKEN
+```
+
 The SPA build points to the API through:
 
 ```text
